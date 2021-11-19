@@ -59,11 +59,23 @@ type App struct {
 	DB *gorm.DB
 }
 
+type Category struct {
+	ID       string `gorm:"index" json:"id"`
+	Name     string `json:"name"`
+	Category string `json:"category"`
+}
+
 func logRequest(handler http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("%s %s %s\n", r.RemoteAddr, r.Method, r.URL)
 		handler.ServeHTTP(w, r)
 	})
+}
+
+func setupCorsResponse(w *http.ResponseWriter, req *http.Request) {
+	(*w).Header().Set("Access-Control-Allow-Origin", "*")
+	(*w).Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+	(*w).Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Authorization")
 }
 
 func (a *App) Initialize(dbURI string) {
@@ -75,10 +87,11 @@ func (a *App) Initialize(dbURI string) {
 
 	// Migrate the schema.
 	a.DB.AutoMigrate(&Entry{})
+	a.DB.AutoMigrate(&Category{})
 }
 
 func (a *App) ListHandler(w http.ResponseWriter, r *http.Request) {
-
+	setupCorsResponse(&w, r)
 	var entry []Entry
 
 	a.DB.Raw("SELECT * FROM entries").Scan(&entry)
@@ -135,6 +148,23 @@ func (a *App) SummaryHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(entryJSON))
 }
 
+func (a *App) CategoryHandler(w http.ResponseWriter, r *http.Request) {
+
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	cat := r.URL.Query()["cat"]
+
+	var category []Category
+
+	a.DB.Raw("SELECT * FROM categories Where category = ?", cat).Scan(&category)
+	categoryJSON, _ := json.Marshal(category)
+
+	// Write to HTTP response.
+	w.WriteHeader(200)
+	w.Write([]byte(categoryJSON))
+}
+
 func main() {
 	a := &App{}
 	a.Initialize("data.db")
@@ -145,6 +175,7 @@ func main() {
 	r.HandleFunc("/recom/{id:.+}", a.ViewHandler).Methods("GET")
 	r.HandleFunc("/must", a.MustHandler).Methods("GET")
 	r.HandleFunc("/summary/{id_list:.+}", a.SummaryHandler).Methods("GET")
+	r.HandleFunc("/category", a.CategoryHandler).Methods("GET")
 
 	fileserver := http.FileServer(http.Dir("./public/"))
 	r.PathPrefix("/").Handler(fileserver)
